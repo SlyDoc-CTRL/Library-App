@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Personal Library & Scanner</title>
+  <meta name="theme-color" content="#1e293b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- HTML5 QR / Barcode Scanner Engine CDN -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    #reader video {
+      border-radius: 12px;
+      object-fit: cover;
+      width: 100% !important;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen pb-24 select-none antialiased font-sans">
+
+  <!-- Top Header -->
+  <header class="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <div class="p-2 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-500/30">
+          <i data-lucide="book-open" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white leading-tight">My Library</h1>
+          <p id="stats-counter" class="text-xs text-slate-400">0 books total</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button id="btn-export-csv" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Export CSV">
+          <i data-lucide="download" class="w-4 h-4"></i>
+        </button>
+        <label class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer" title="Import CSV">
+          <i data-lucide="upload" class="w-4 h-4"></i>
+          <input id="csv-file-input" type="file" accept=".csv" class="hidden" />
+        </label>
+        <button id="btn-open-scanner" class="flex items-center space-x-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium shadow-md shadow-indigo-600/30 text-sm transition">
+          <i data-lucide="camera" class="w-4 h-4"></i>
+          <span>Scan Barcode</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-4xl mx-auto px-4 py-4 space-y-4">
+
+    <!-- Search & Quick Filters -->
+    <div class="space-y-3">
+      <div class="relative">
+        <i data-lucide="search" class="absolute left-3 top-3 w-4 h-4 text-slate-500"></i>
+        <input id="search-input" type="text" placeholder="Search by title, author, ISBN, or borrower..." 
+          class="w-full pl-9 pr-4 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" />
+      </div>
+
+      <!-- Segmented Status Tabs -->
+      <div class="flex p-1 bg-slate-800/90 rounded-xl border border-slate-700/70 text-xs font-medium">
+        <button data-filter="all" class="filter-tab flex-1 py-1.5 text-center rounded-lg transition bg-indigo-600 text-white font-semibold shadow-sm">All</button>
+        <button data-filter="in_library" class="filter-tab flex-1 py-1.5 text-center rounded-lg transition text-slate-400 hover:text-slate-200">In Library</button>
+        <button data-filter="past_owned_read" class="filter-tab flex-1 py-1.5 text-center rounded-lg transition text-slate-400 hover:text-slate-200">Past Read/Owned</button>
+        <button data-filter="lent" class="filter-tab flex-1 py-1.5 text-center rounded-lg transition text-slate-400 hover:text-slate-200">Lent Out</button>
+      </div>
+
+      <!-- Genre Pills Bar -->
+      <div id="genre-pills" class="flex space-x-2 overflow-x-auto pb-1 text-xs no-scrollbar">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+
+    <!-- Book Catalog List / Groups -->
+    <div id="book-catalog-container" class="space-y-6">
+      <!-- Injected dynamically -->
+    </div>
+  </main>
+
+  <!-- Scanner Modal Overlay -->
+  <div id="scanner-modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md hidden flex flex-col items-center justify-between p-4">
+    <div class="w-full max-w-md flex justify-between items-center text-white pt-2">
+      <div class="flex items-center space-x-2">
+        <i data-lucide="scan" class="w-5 h-5 text-indigo-400 animate-pulse"></i>
+        <span class="font-semibold text-sm">Align Barcode in Frame</span>
+      </div>
+      <button id="btn-close-scanner" class="p-2 rounded-full bg-slate-800 text-slate-300 hover:text-white">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Camera Viewport -->
+    <div class="w-full max-w-sm relative rounded-2xl overflow-hidden border-2 border-indigo-500/50 shadow-2xl bg-black my-auto">
+      <div id="reader" class="w-full"></div>
+      <div id="scan-laser" class="absolute inset-x-0 h-0.5 bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse pointer-events-none" style="top: 50%;"></div>
+    </div>
+
+    <!-- Manual ISBN Fallback -->
+    <div class="w-full max-w-md space-y-2 pb-6">
+      <p id="scanner-feedback" class="text-xs text-center text-slate-400 min-h-[1.2rem]">Position the book's 10 or 13-digit ISBN barcode</p>
+      <div class="flex space-x-2">
+        <input id="manual-isbn-input" type="text" placeholder="Or type ISBN directly..." 
+          class="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500" />
+        <button id="btn-manual-lookup" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">Lookup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lend Book Modal -->
+  <div id="lend-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-white text-base">Track Book Loan</h3>
+        <button id="btn-close-lend" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="space-y-3 text-sm">
+        <input type="hidden" id="lend-book-id" />
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Borrower Name *</label>
+          <input id="lend-borrower" type="text" placeholder="e.g. Sarah Jenkins" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Expected Return Due Date</label>
+          <input id="lend-due-date" type="date" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500" />
+        </div>
+      </div>
+      <div class="flex justify-end space-x-2 pt-2">
+        <button id="btn-cancel-lend" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-lg">Cancel</button>
+        <button id="btn-save-lend" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg">Save Loan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Feedback -->
+  <div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 bg-slate-800 border border-slate-700 text-white text-xs rounded-xl shadow-xl flex items-center space-x-2 transition-all opacity-0 pointer-events-none">
+    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toast-message">Message</span>
+  </div>
+
+  <script>
+    // --- Initial State & Storage ---
+    const STORAGE_KEY = "my_library_books_v1";
+    const defaultBooks = [
+      { id: "1", title: "Being Mortal: Medicine and What Matters in the End", author: "Atul Gawande", isbn: "9780805095159", genre: "Medical", status: "in_library", publishYear: 2014, pages: 304, lent: null },
+      { id: "2", title: "The Emperor of All Maladies", author: "Siddhartha Mukherjee", isbn: "9781439170915", genre: "Medical", status: "in_library", publishYear: 2010, pages: 592, lent: null },
+      { id: "3", title: "Project Hail Mary", author: "Andy Weir", isbn: "9780593135204", genre: "Fiction / Sci-Fi", status: "in_library", publishYear: 2021, pages: 496, lent: null },
+      { id: "4", title: "Tomorrow, and Tomorrow, and Tomorrow", author: "Gabrielle Zevin", isbn: "9780593321201", genre: "Fiction", status: "past_owned_read", publishYear: 2022, pages: 416, lent: null },
+      { id: "5", title: "Educated: A Memoir", author: "Tara Westover", isbn: "9780399590504", genre: "Biography", status: "in_library", publishYear: 2018, pages: 352, lent: { borrower: "David K.", dueDate: "2026-08-30" } },
+      { id: "6", title: "Steve Jobs", author: "Walter Isaacson", isbn: "9781451648539", genre: "Biography", status: "past_owned_read", publishYear: 2011, pages: 656, lent: null },
+      { id: "7", title: "Sapiens: A Brief History of Humankind", author: "Yuval Noah Harari", isbn: "9780062316097", genre: "History / Non-Fiction", status: "in_library", publishYear: 2015, pages: 464, lent: null }
+    ];
+
+    let books = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultBooks;
+    let activeFilter = "all";
+    let activeGenre = "all";
+    let searchQuery = "";
+    let html5QrCodeScanner = null;
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
+      render();
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      document.getElementById("toast-message").textContent = msg;
+      toast.classList.remove("opacity-0", "pointer-events-none");
+      setTimeout(() => toast.classList.add("opacity-0", "pointer-events-none"), 3000);
+    }
+
+    // --- Automatic Genre Classifier ---
+    function classifyGenre(title = "", subjects = []) {
+      const combined = (title + " " + subjects.join(" ")).toLowerCase();
+      if (combined.match(/medicine|medical|surgery|cardio|doctor|clinical|disease|anatomy|cancer|mortality/)) return "Medical";
+      if (combined.match(/biography|memoir|autobiography|life of|diaries/)) return "Biography";
+      if (combined.match(/sci-fi|science fiction|space|fantasy|novel|fiction|dune|thriller/)) return "Fiction / Sci-Fi";
+      if (combined.match(/history|historical|war|civilization|humanity|archaeology/)) return "History / Non-Fiction";
+      if (combined.match(/business|finance|economics|leadership|investing/)) return "Business & Leadership";
+      return "General Non-Fiction";
+    }
+
+    // --- Open Library Metadata Fetcher ---
+    async function fetchBookMetadata(isbn) {
+      const cleanIsbn = isbn.replace(/[^0-9X]/gi, "");
+      const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`);
+      const data = await res.json();
+      const bookData = data[`ISBN:${cleanIsbn}`];
+      
+      if (!bookData) {
+        return {
+          id: Date.now().toString(),
+          title: `Book (ISBN: ${cleanIsbn})`,
+          author: "Unknown Author",
+          isbn: cleanIsbn,
+          genre: "Uncategorized",
+          status: "in_library",
+          publishYear: new Date().getFullYear(),
+          pages: 0,
+          lent: null
+        };
+      }
+
+      const subjects = (bookData.subjects || []).map(s => typeof s === "object" ? s.name : s);
+      return {
+        id: Date.now().toString(),
+        title: bookData.title || "Untitled Book",
+        author: bookData.authors ? bookData.authors.map(a => a.name).join(", ") : "Unknown Author",
+        isbn: cleanIsbn,
+        genre: classifyGenre(bookData.title, subjects),
+        status: "in_library",
+        publishYear: bookData.publish_date ? parseInt(bookData.publish_date.match(/\d{4}/)?.[0] || "0") : new Date().getFullYear(),
+        pages: bookData.number_of_pages || 0,
+        lent: null
+      };
+    }
+
+    // --- Render Logic ---
+    function render() {
+      // 1. Stats Counter
+      const inLibraryCount = books.filter(b => b.status === "in_library").length;
+      document.getElementById("stats-counter").textContent = `${books.length} books total • ${inLibraryCount} on shelf`;
+
+      // 2. Genre Pills
+      const genres = ["all", ...new Set(books.map(b => b.genre))];
+      const pillsContainer = document.getElementById("genre-pills");
+      pillsContainer.innerHTML = genres.map(g => `
+        <button class="px-3 py-1 rounded-full whitespace-nowrap border transition ${activeGenre === g ? 'bg-slate-200 text-slate-900 border-slate-200 font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'}" onclick="setGenreFilter('${g}')">
+          ${g === 'all' ? 'All Genres' : g} (${g === 'all' ? books.length : books.filter(b => b.genre === g).length})
+        </button>
+      `).join("");
+
+      // 3. Filtered Books
+      const filtered = books.filter(b => {
+        const matchSearch = b.title.toLowerCase().includes(searchQuery) ||
+                            b.author.toLowerCase().includes(searchQuery) ||
+                            b.isbn.includes(searchQuery) ||
+                            (b.lent?.borrower || "").toLowerCase().includes(searchQuery);
+        
+        let matchFilter = true;
+        if (activeFilter === "in_library") matchFilter = b.status === "in_library";
+        if (activeFilter === "past_owned_read") matchFilter = b.status === "past_owned_read";
+        if (activeFilter === "lent") matchFilter = b.lent !== null;
+
+        const matchGenre = activeGenre === "all" || b.genre === activeGenre;
+        return matchSearch && matchFilter && matchGenre;
+      });
+
+      // Group by Genre
+      const groups = {};
+      filtered.forEach(b => {
+        if (!groups[b.genre]) groups[b.genre] = [];
+        groups[b.genre].push(b);
+      });
+
+      const catalog = document.getElementById("book-catalog-container");
+      if (filtered.length === 0) {
+        catalog.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm">No books found matching criteria.</div>`;
+        lucide.createIcons();
+        return;
+      }
+
+      catalog.innerHTML = Object.entries(groups).map(([genre, list]) => `
+        <section class="space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+            <h2 class="font-bold text-sm text-slate-300 uppercase tracking-wider flex items-center space-x-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
+              <span>${genre}</span>
+            </h2>
+            <span class="text-xs text-slate-500">${list.length}</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            ${list.map(b => `
+              <div class="bg-slate-800/70 border border-slate-700/60 rounded-xl p-3.5 flex flex-col justify-between space-y-3 hover:border-slate-600 transition">
+                <div>
+                  <div class="flex justify-between items-start space-x-2">
+                    <h3 class="font-semibold text-sm text-white leading-tight">${b.title}</h3>
+                    <button onclick="toggleStatus('${b.id}')" class="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide whitespace-nowrap transition ${b.status === 'in_library' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-700 text-slate-400 border border-slate-600'}">
+                      ${b.status === 'in_library' ? 'In Library' : 'Read / Past'}
+                    </button>
+                  </div>
+                  <p class="text-xs text-slate-400 mt-1">${b.author} ${b.publishYear ? `• ${b.publishYear}` : ''}</p>
+                  <p class="text-[11px] text-slate-500 font-mono mt-0.5">ISBN: ${b.isbn}</p>
+                </div>
+
+                <!-- Loan Banner if active -->
+                ${b.lent ? `
+                  <div class="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 flex items-center justify-between text-xs text-amber-300">
+                    <div>
+                      <span class="font-semibold">Lent to:</span> ${b.lent.borrower}
+                      ${b.lent.dueDate ? `<span class="text-[10px] block text-amber-400/80">Due: ${b.lent.dueDate}</span>` : ''}
+                    </div>
+                    <button onclick="returnBook('${b.id}')" class="text-[11px] underline hover:text-amber-200">Return</button>
+                  </div>
+                ` : ''}
+
+                <!-- Actions row -->
+                <div class="flex items-center justify-between pt-2 border-t border-slate-700/50 text-xs text-slate-400">
+                  <div class="space-x-2">
+                    ${!b.lent ? `<button onclick="openLendModal('${b.id}')" class="hover:text-indigo-400 transition">Lend Book</button>` : ''}
+                  </div>
+                  <button onclick="deleteBook('${b.id}')" class="text-slate-500 hover:text-rose-400 transition">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </section>
+      `).join("");
+
+      lucide.createIcons();
+    }
+
+    // --- Actions ---
+    window.setGenreFilter = (g) => { activeGenre = g; render(); };
+    window.toggleStatus = (id) => {
+      books = books.map(b => b.id === id ? { ...b, status: b.status === "in_library" ? "past_owned_read" : "in_library" } : b);
+      saveState();
+    };
+    window.deleteBook = (id) => {
+      if (confirm("Remove this book from catalog?")) {
+        books = books.filter(b => b.id !== id);
+        saveState();
+        showToast("Book removed.");
+      }
+    };
+    window.returnBook = (id) => {
+      books = books.map(b => b.id === id ? { ...b, lent: null } : b);
+      saveState();
+      showToast("Book marked as returned.");
+    };
+
+    // --- Search & Filter Listeners ---
+    document.getElementById("search-input").addEventListener("input", (e) => {
+      searchQuery = e.target.value.toLowerCase();
+      render();
+    });
+
+    document.querySelectorAll(".filter-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".filter-tab").forEach(t => {
+          t.className = "filter-tab flex-1 py-1.5 text-center rounded-lg transition text-slate-400 hover:text-slate-200";
+        });
+        tab.className = "filter-tab flex-1 py-1.5 text-center rounded-lg transition bg-indigo-600 text-white font-semibold shadow-sm";
+        activeFilter = tab.getAttribute("data-filter");
+        render();
+      });
+    });
+
+    // --- Scanner Logic ---
+    const scannerModal = document.getElementById("scanner-modal");
+    document.getElementById("btn-open-scanner").addEventListener("click", async () => {
+      scannerModal.classList.remove("hidden");
+      if (!html5QrCodeScanner) {
+        html5QrCodeScanner = new Html5Qrcode("reader");
+      }
+      try {
+        await html5QrCodeScanner.start(
+          { facingMode: "environment" },
+          { fps: 15, qrbox: { width: 280, height: 160 } },
+          async (decodedText) => {
+            document.getElementById("scanner-feedback").textContent = `Decoded: ${decodedText}. Fetching details...`;
+            await handleScannedIsbn(decodedText);
+            stopScanner();
+          },
+          () => {}
+        );
+      } catch (err) {
+        document.getElementById("scanner-feedback").textContent = "Camera access denied or unavailable. Use manual input below.";
+      }
+    });
+
+    function stopScanner() {
+      if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
+        html5QrCodeScanner.stop().catch(() => {});
+      }
+      scannerModal.classList.add("hidden");
+    }
+
+    document.getElementById("btn-close-scanner").addEventListener("click", stopScanner);
+
+    async function handleScannedIsbn(isbn) {
+      showToast("Looking up book info...");
+      const newBook = await fetchBookMetadata(isbn);
+      books.unshift(newBook);
+      saveState();
+      showToast(`Added "${newBook.title}"`);
+    }
+
+    document.getElementById("btn-manual-lookup").addEventListener("click", async () => {
+      const val = document.getElementById("manual-isbn-input").value.trim();
+      if (val) {
+        await handleScannedIsbn(val);
+        document.getElementById("manual-isbn-input").value = "";
+        stopScanner();
+      }
+    });
+
+    // --- Lending Modal Logic ---
+    const lendModal = document.getElementById("lend-modal");
+    window.openLendModal = (id) => {
+      document.getElementById("lend-book-id").value = id;
+      document.getElementById("lend-borrower").value = "";
+      document.getElementById("lend-due-date").value = "";
+      lendModal.classList.remove("hidden");
+    };
+
+    document.getElementById("btn-close-lend").addEventListener("click", () => lendModal.classList.add("hidden"));
+    document.getElementById("btn-cancel-lend").addEventListener("click", () => lendModal.classList.add("hidden"));
+
+    document.getElementById("btn-save-lend").addEventListener("click", () => {
+      const id = document.getElementById("lend-book-id").value;
+      const borrower = document.getElementById("lend-borrower").value.trim();
+      const dueDate = document.getElementById("lend-due-date").value;
+      if (!borrower) { alert("Please enter borrower name"); return; }
+
+      books = books.map(b => b.id === id ? { ...b, lent: { borrower, dueDate } } : b);
+      saveState();
+      lendModal.classList.add("hidden");
+      showToast(`Book lent to ${borrower}`);
+    });
+
+    // --- CSV Export & Import ---
+    document.getElementById("btn-export-csv").addEventListener("click", () => {
+      const headers = ["Title", "Author", "ISBN", "Genre", "Status", "Year", "Pages", "LentTo", "DueDate"];
+      const rows = books.map(b => [
+        `"${(b.title || '').replace(/"/g, '""')}"`,
+        `"${(b.author || '').replace(/"/g, '""')}"`,
+        `"${b.isbn || ''}"`,
+        `"${b.genre || ''}"`,
+        `"${b.status || ''}"`,
+        b.publishYear || '',
+        b.pages || '',
+        `"${b.lent?.borrower || ''}"`,
+        `"${b.lent?.dueDate || ''}"`
+      ]);
+      const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `my_library_backup_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    document.getElementById("csv-file-input").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target.result;
+        const lines = text.split("\n").filter(l => l.trim().length > 0);
+        let added = 0;
+        lines.slice(1).forEach(line => {
+          const cols = line.split(",").map(c => c.replace(/^"|"$/g, '').trim());
+          if (cols[0]) {
+            books.push({
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
+              title: cols[0] || "Imported Title",
+              author: cols[1] || "Unknown",
+              isbn: cols[2] || "",
+              genre: cols[3] || "General Non-Fiction",
+              status: cols[4] || "in_library",
+              publishYear: parseInt(cols[5]) || new Date().getFullYear(),
+              pages: parseInt(cols[6]) || 0,
+              lent: cols[7] ? { borrower: cols[7], dueDate: cols[8] || "" } : null
+            });
+            added++;
+          }
+        });
+        saveState();
+        showToast(`Imported ${added} books from CSV.`);
+      };
+      reader.readAsText(file);
+    });
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
